@@ -10,19 +10,22 @@ Early development — engine MVP working, control plane and delivery layer in pr
 
 ## Architecture
 
-MySQL (source DB)
-│
-│ replication protocol
-▼
-┌─────────────────────────┐
-│  Go CDC Engine          │  ← parses binlog, emits events
-└──────────┬──────────────┘
-│
-▼
-(Redis Streams + delivery — coming soon)
-│
-▼
-Webhooks / WebSocket / API
+```mermaid
+flowchart TD
+    A[(MySQL<br/>source DB)] -->|replication protocol| B[Go CDC Engine]
+    B -->|events| C{Pipeline}
+    C -->|coming soon| D[Redis Streams]
+    D --> E[Webhook Delivery]
+    D --> F[WebSocket Push]
+    D --> G[REST Query API]
+
+    style A fill:#1e3a8a,stroke:#3b82f6,color:#fff
+    style B fill:#065f46,stroke:#10b981,color:#fff
+    style C fill:#7c2d12,stroke:#ea580c,color:#fff
+    style D fill:#581c87,stroke:#a855f7,color:#fff
+```
+
+The engine connects to MySQL using the replication protocol (acting as a virtual replica), parses binary log events, and forwards normalized row changes to a delivery pipeline. Future work adds Redis Streams as a durable buffer and three consumer types: webhooks, WebSocket subscribers, and a REST query API.
 
 ## Components
 

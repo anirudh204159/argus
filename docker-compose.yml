@@ -1,0 +1,43 @@
+services:
+  source-mysql:
+    image: mysql:8.0
+    container_name: argus-source-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: argus_demo
+    ports:
+      - "3307:3306"
+    command: >
+      --log-bin=binlog
+      --binlog-format=ROW
+      --binlog-row-image=FULL
+      --server-id=1
+    volumes:
+      - source-mysql-data:/var/lib/mysql
+
+  metadata-mysql:
+    image: mysql:8.0
+    container_name: argus-metadata-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: argus_metadata
+    ports:
+      - "3308:3306"
+    volumes:
+      - metadata-mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    container_name: argus-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  source-mysql-data:
+  metadata-mysql-data:
+  redis-data:

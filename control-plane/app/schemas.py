@@ -31,3 +31,41 @@ class Token(BaseModel):
     """Response body for successful login"""
     access_token: str
     token_type: str = "bearer"
+
+
+# ---------- Sources ----------
+
+class SourceCreate(BaseModel):
+    """Request body for POST /sources"""
+    name: str = Field(min_length=1, max_length=100)
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=3306, ge=1, le=65535)
+    database_name: str = Field(min_length=1, max_length=100)
+    replication_user: str = Field(min_length=1, max_length=100)
+    replication_password: str = Field(min_length=1, max_length=255)
+
+
+class SourceUpdate(BaseModel):
+    """Request body for PATCH /sources/{id}. All fields optional."""
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    host: str | None = Field(default=None, min_length=1, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    database_name: str | None = Field(default=None, min_length=1, max_length=100)
+    replication_user: str | None = Field(default=None, min_length=1, max_length=100)
+    replication_password: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class SourceOut(BaseModel):
+    """Source data returned to clients (no replication password)."""
+    id: int
+    name: str
+    host: str
+    port: int
+    database_name: str
+    replication_user: str
+    status: str
+    last_error: str | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -69,3 +69,45 @@ class SourceOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+# ---------- Subscriptions ----------
+
+class SubscriptionCreate(BaseModel):
+    """Request body for POST /subscriptions"""
+    source_id: int
+    name: str = Field(min_length=1, max_length=100)
+    tables: list[str] = Field(min_length=1)
+    operations: list[str] = Field(min_length=1)
+    webhook_url: str = Field(min_length=1, max_length=2000)
+    retry_max: int = Field(default=5, ge=0, le=20)
+
+
+class SubscriptionUpdate(BaseModel):
+    """Request body for PATCH /subscriptions/{id}. All fields optional."""
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    tables: list[str] | None = Field(default=None, min_length=1)
+    operations: list[str] | None = Field(default=None, min_length=1)
+    webhook_url: str | None = Field(default=None, min_length=1, max_length=2000)
+    retry_max: int | None = Field(default=None, ge=0, le=20)
+    active: bool | None = None
+
+
+class SubscriptionOut(BaseModel):
+    """Subscription data returned to clients."""
+    id: int
+    source_id: int
+    name: str
+    tables: list[str]
+    operations: list[str]
+    webhook_url: str
+    retry_max: int
+    active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SubscriptionCreated(SubscriptionOut):
+    """Returned on initial creation — includes the HMAC secret (only shown once)."""
+    hmac_secret: str

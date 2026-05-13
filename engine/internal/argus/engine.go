@@ -1,4 +1,4 @@
-package main
+package argus
 
 import (
 	"context"
@@ -9,7 +9,9 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-func main() {
+// RunEngine starts the binlog reader and event pipeline.
+// Blocks forever — returns only on fatal error.
+func RunEngine() error {
 	cfg := replication.BinlogSyncerConfig{
 		ServerID: 100,
 		Flavor:   "mysql",
@@ -23,15 +25,19 @@ func main() {
 	var err error
 	schemaDB, err = sql.Open("mysql", dsn)
 	if err != nil {
-		fmt.Println("schema connection error:", err)
-		return
+		return fmt.Errorf("schema connection: %w", err)
 	}
 	defer schemaDB.Close()
 
+	if err := initRedis(); err != nil {
+		return fmt.Errorf("redis init: %w", err)
+	}
+	defer rdb.Close()
+	fmt.Println("Connected to Redis")
+
 	pos, err := getCurrentPosition()
 	if err != nil {
-		fmt.Println("error getting position:", err)
-		return
+		return fmt.Errorf("get current position: %w", err)
 	}
 	fmt.Printf("Starting from %s:%d\n", pos.Name, pos.Pos)
 
@@ -40,8 +46,7 @@ func main() {
 
 	streamer, err := syncer.StartSync(pos)
 	if err != nil {
-		fmt.Println("start sync error:", err)
-		return
+		return fmt.Errorf("start sync: %w", err)
 	}
 
 	eventChan := make(chan Event, 1000)
@@ -52,8 +57,7 @@ func main() {
 	for {
 		ev, err := streamer.GetEvent(context.Background())
 		if err != nil {
-			fmt.Println("get event error:", err)
-			return
+			return fmt.Errorf("get event: %w", err)
 		}
 
 		switch e := ev.Event.(type) {

@@ -1,4 +1,4 @@
-package main
+package argus
 
 // Event is Argus's normalized representation of a single row change.
 type Event struct {

@@ -1,21 +1,27 @@
-package main
+package argus
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
 
-// consumer receives events from the channel and prints them.
-// In future phases this will be replaced with "send to Redis" or "POST to webhook".
+// consumer receives events from the channel, publishes to Redis, and logs to console.
+// In future phases the console print goes away; Redis becomes the only sink.
 func consumer(ch <-chan Event) {
+	ctx := context.Background()
 	for ev := range ch {
-		printEvent(ev)
+		if err := publishEvent(ctx, ev); err != nil {
+			fmt.Printf("publish error: %v (event: %s.%s/%s)\n", err, ev.Schema, ev.Table, ev.Operation)
+			continue
+		}
+		printEvent(ev) // keep printing during dev so we can see what's flowing
 	}
 }
 
 // printEvent renders an Event for the console.
 func printEvent(ev Event) {
-	fmt.Printf("[%s] %s.%s\n", ev.Operation, ev.Schema, ev.Table)
+	fmt.Printf("[%s] %s.%s → published\n", ev.Operation, ev.Schema, ev.Table)
 	if ev.Before != nil {
 		fmt.Printf("    before: %s\n", formatMap(ev.Before))
 	}

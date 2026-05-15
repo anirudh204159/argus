@@ -152,3 +152,29 @@ func logDelivery(ctx context.Context, subscriptionID int64, eventID string, atte
 		fmt.Printf("delivery log write error: %v\n", err)
 	}
 }
+
+// writeToDLQ stores a permanently failed event in the dead_letter_events table.
+func writeToDLQ(ctx context.Context, subscriptionID int64, eventID string, ev Event, attempts int, lastError string) {
+	payload, err := json.Marshal(map[string]any{
+		"schema":    ev.Schema,
+		"table":     ev.Table,
+		"operation": ev.Operation,
+		"before":    ev.Before,
+		"after":     ev.After,
+	})
+	if err != nil {
+		fmt.Printf("dlq marshal error: %v\n", err)
+		return
+	}
+
+	_, err = metadataDB.ExecContext(ctx, `
+		INSERT INTO dead_letter_events
+			(subscription_id, event_id, payload, attempts, last_error, failed_at)
+		VALUES (?, ?, ?, ?, ?, NOW())
+	`,
+		subscriptionID, eventID, payload, attempts, lastError,
+	)
+	if err != nil {
+		fmt.Printf("dlq write error: %v\n", err)
+	}
+}

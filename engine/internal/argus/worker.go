@@ -102,8 +102,9 @@ func handleMessage(ctx context.Context, msg redis.XMessage) error {
 	for _, sub := range matches {
 		result, attempts := deliverWithRetries(ctx, sub, ev, msg.ID)
 		if !result.Success {
-			fmt.Printf("    ! sub %d exhausted retries after %d attempts — TODO: DLQ\n",
-				sub.ID, attempts)
+			writeToDLQ(ctx, sub.ID, msg.ID, ev, attempts, result.ErrorMessage)
+			fmt.Printf("    ! sub %d → DLQ after %d attempts: %s\n",
+				sub.ID, attempts, result.ErrorMessage)
 		}
 	}
 

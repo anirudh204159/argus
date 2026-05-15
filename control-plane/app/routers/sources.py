@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Source, User
-from app.schemas import SourceCreate, SourceUpdate, SourceOut
+from app.redis_client import publish_config_change
+from app.schemas import SourceCreate, SourceOut, SourceUpdate
 from app.security import get_current_user
-
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -15,27 +16,24 @@ router = APIRouter(prefix="/sources", tags=["sources"])
 def create_source(
     payload: SourceCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """Register a new MySQL source for the current user."""
     source = Source(
-        user_id=current_user.id,
+        user_id=user.id,
         name=payload.name,
         host=payload.host,
         port=payload.port,
         database_name=payload.database_name,
         replication_user=payload.replication_user,
-        replication_password_enc=payload.replication_password.encode("utf-8"),
+        replication_password_enc=payload.replication_password.encode(),
+        status="active",
     )
     db.add(source)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"You already have a source named '{payload.name}'",
-        )
+        raise HTTPException(status_code=409, detail="Source with that name already exists")
     db.refresh(source)
     return source
 
@@ -43,26 +41,24 @@ def create_source(
 @router.get("", response_model=list[SourceOut])
 def list_sources(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """List all sources owned by the current user."""
-    return db.query(Source).filter(Source.user_id == current_user.id).all()
+    return db.execute(
+        select(Source).where(Source.user_id == user.id)
+    ).scalars().all()
 
 
 @router.get("/{source_id}", response_model=SourceOut)
 def get_source(
     source_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """Get a single source by ID."""
-    source = (
-        db.query(Source)
-        .filter(Source.id == source_id, Source.user_id == current_user.id)
-        .first()
-    )
-    if source is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    source = db.execute(
+        select(Source).where(Source.id == source_id, Source.user_id == user.id)
+    ).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
     return source
 
 
@@ -71,34 +67,24 @@ def update_source(
     source_id: int,
     payload: SourceUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """Update fields on a source. Only fields included in the body are changed."""
-    source = (
-        db.query(Source)
-        .filter(Source.id == source_id, Source.user_id == current_user.id)
-        .first()
-    )
-    if source is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    source = db.execute(
+        select(Source).where(Source.id == source_id, Source.user_id == user.id)
+    ).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
 
-    updates = payload.model_dump(exclude_unset=True)
-
-    if "replication_password" in updates:
-        source.replication_password_enc = updates.pop("replication_password").encode("utf-8")
-
-    for field, value in updates.items():
+    update_data = payload.model_dump(exclude_unset=True)
+    if "replication_password" in update_data:
+        update_data["replication_password_enc"] = update_data.pop("replication_password").encode()
+    for field, value in update_data.items():
         setattr(source, field, value)
 
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A source with that name already exists",
-        )
+    db.commit()
     db.refresh(source)
+
+    publish_config_change("source_updated", source_id)
     return source
 
 
@@ -106,17 +92,15 @@ def update_source(
 def delete_source(
     source_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """Delete a source. All related subscriptions and the checkpoint are cascaded."""
-    source = (
-        db.query(Source)
-        .filter(Source.id == source_id, Source.user_id == current_user.id)
-        .first()
-    )
-    if source is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    source = db.execute(
+        select(Source).where(Source.id == source_id, Source.user_id == user.id)
+    ).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
 
     db.delete(source)
     db.commit()
-    return None
+
+    publish_config_change("source_deleted", source_id)

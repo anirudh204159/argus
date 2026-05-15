@@ -35,6 +35,9 @@ func RunWorker() error {
 	// Start background subscription refresher
 	go refreshSubscriptions(ctx)
 
+	// Live config update listener (Redis pub/sub)
+	go watchConfigChanges(ctx)
+
 	// Give it a beat to do the first load before we start processing
 	time.Sleep(500 * time.Millisecond)
 

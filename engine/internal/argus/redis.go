@@ -11,7 +11,7 @@ import (
 const (
 	redisAddr    = "localhost:6379"
 	streamKey    = "argus:events"
-	streamMaxLen = 10000 // cap stream size (oldest events dropped if exceeded)
+	streamMaxLen = 10000
 )
 
 var rdb *redis.Client
@@ -21,7 +21,6 @@ func initRedis() error {
 		Addr: redisAddr,
 	})
 
-	// Sanity check — confirm we can talk to Redis at all
 	ctx := context.Background()
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		return fmt.Errorf("redis ping failed: %w", err)
@@ -29,7 +28,6 @@ func initRedis() error {
 	return nil
 }
 
-// publishEvent serializes an Event to JSON and pushes it onto the Redis Stream.
 func publishEvent(ctx context.Context, ev Event) error {
 	payload, err := json.Marshal(ev)
 	if err != nil {
@@ -39,12 +37,17 @@ func publishEvent(ctx context.Context, ev Event) error {
 	args := &redis.XAddArgs{
 		Stream: streamKey,
 		MaxLen: streamMaxLen,
-		Approx: true, // ~MAXLEN — more efficient
+		Approx: true,
 		Values: map[string]any{
 			"payload": payload,
 		},
 	}
 
 	_, err = rdb.XAdd(ctx, args).Result()
+	if err != nil {
+		redisPublishErrorsTotal.Inc()
+	} else {
+		redisPublishesTotal.Inc()
+	}
 	return err
 }

@@ -3,18 +3,16 @@ package argus
 import (
 	"context"
 	"fmt"
+
+	"github.com/redis/go-redis/v9"
 )
 
 const configChannel = "argus:config"
 
-// watchConfigChanges subscribes to Redis pub/sub and triggers immediate
-// subscription reloads when a message arrives. Runs as a goroutine for
-// the lifetime of the worker.
 func watchConfigChanges(ctx context.Context) {
 	pubsub := rdb.Subscribe(ctx, configChannel)
 	defer pubsub.Close()
 
-	// Block until subscription is confirmed
 	if _, err := pubsub.Receive(ctx); err != nil {
 		fmt.Printf("config watcher subscribe error: %v\n", err)
 		return
@@ -42,8 +40,13 @@ func watchConfigChanges(ctx context.Context) {
 			subscriptionsMu.Lock()
 			cachedSubscriptions = subs
 			subscriptionsMu.Unlock()
+			subscriptionsActive.Set(float64(len(subs)))
 
 			fmt.Printf("[config] reloaded — %d active subscriptions\n", len(subs))
 		}
 	}
 }
+
+// Suppress "imported and not used" linter for the redis package
+// (used in the type assertion inside Channel())
+var _ = redis.Nil

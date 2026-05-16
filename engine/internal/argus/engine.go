@@ -55,6 +55,9 @@ func RunEngine() error {
 	}
 	defer schemaDB.Close()
 
+	// Start metrics HTTP server (port 9101 for engine)
+	go serveMetrics(9101)
+
 	if err := initMetadataDB(); err != nil {
 		return fmt.Errorf("metadata db init: %w", err)
 	}
@@ -78,7 +81,6 @@ func RunEngine() error {
 	fmt.Printf("Starting from %s:%d\n", pos.Name, pos.Pos)
 	updateCurrentPosition(pos)
 
-	// Start background checkpoint saver
 	go checkpointLoop(ctx)
 
 	syncer := replication.NewBinlogSyncer(cfg)
@@ -97,7 +99,6 @@ func RunEngine() error {
 	for {
 		ev, err := streamer.GetEvent(ctx)
 		if err != nil {
-			// Context cancelled = graceful shutdown, not an error
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -108,6 +109,7 @@ func RunEngine() error {
 			Name: getCurrentTrackedPosition().Name,
 			Pos:  ev.Header.LogPos,
 		})
+		currentBinlogPos.Set(float64(ev.Header.LogPos))
 
 		if rotateEvent, ok := ev.Event.(*replication.RotateEvent); ok {
 			updateCurrentPosition(mysql.Position{
@@ -125,13 +127,13 @@ func RunEngine() error {
 				continue
 			}
 			for _, event := range events {
+				binlogEventsTotal.WithLabelValues(event.Operation).Inc()
 				eventChan <- event
 			}
 		}
 	}
 }
 
-// determineStartPosition decides where to begin reading the binlog.
 func determineStartPosition(ctx context.Context) (mysql.Position, error) {
 	file, posVal, err := loadCheckpoint(ctx, hardcodedSourceID)
 	if err != nil {
@@ -147,8 +149,6 @@ func determineStartPosition(ctx context.Context) (mysql.Position, error) {
 	return getCurrentPosition()
 }
 
-// checkpointLoop periodically saves the current binlog position.
-// Runs as a goroutine for the lifetime of the engine.
 func checkpointLoop(ctx context.Context) {
 	ticker := time.NewTicker(checkpointInterval)
 	defer ticker.Stop()
@@ -156,7 +156,6 @@ func checkpointLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Final checkpoint write on shutdown
 			pos := getCurrentTrackedPosition()
 			if pos.Name != "" {
 				if err := saveCheckpoint(context.Background(), hardcodedSourceID, pos.Name, pos.Pos); err != nil {
@@ -179,8 +178,6 @@ func checkpointLoop(ctx context.Context) {
 	}
 }
 
-// ShutdownEngine triggers graceful shutdown of the engine.
-// Causes the main loop to exit and the checkpoint loop to save a final position.
 func ShutdownEngine() {
 	if engineCancel != nil {
 		engineCancel()

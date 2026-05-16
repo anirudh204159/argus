@@ -16,7 +16,6 @@ const (
 	refreshEvery = 30 * time.Second
 )
 
-// Subscription represents a row from the subscriptions table.
 type Subscription struct {
 	ID         int64
 	UserID     int64
@@ -49,7 +48,6 @@ func initMetadataDB() error {
 	return nil
 }
 
-// loadSubscriptions fetches active subscriptions from the metadata DB.
 func loadSubscriptions(ctx context.Context) ([]Subscription, error) {
 	rows, err := metadataDB.QueryContext(ctx, `
 		SELECT id, user_id, source_id, name, tables, operations,
@@ -88,7 +86,6 @@ func loadSubscriptions(ctx context.Context) ([]Subscription, error) {
 	return subs, rows.Err()
 }
 
-// refreshSubscriptions periodically reloads the subscription cache.
 func refreshSubscriptions(ctx context.Context) {
 	ticker := time.NewTicker(refreshEvery)
 	defer ticker.Stop()
@@ -101,6 +98,7 @@ func refreshSubscriptions(ctx context.Context) {
 			subscriptionsMu.Lock()
 			cachedSubscriptions = subs
 			subscriptionsMu.Unlock()
+			subscriptionsActive.Set(float64(len(subs)))
 			fmt.Printf("loaded %d active subscriptions\n", len(subs))
 		}
 
@@ -112,7 +110,6 @@ func refreshSubscriptions(ctx context.Context) {
 	}
 }
 
-// getSubscriptions returns a snapshot of the current subscription cache.
 func getSubscriptions() []Subscription {
 	subscriptionsMu.RLock()
 	defer subscriptionsMu.RUnlock()
@@ -121,7 +118,6 @@ func getSubscriptions() []Subscription {
 	return snapshot
 }
 
-// logDelivery records one delivery attempt in the delivery_log table.
 func logDelivery(ctx context.Context, subscriptionID int64, eventID string, attempt int, result deliveryResult) {
 	status := "failure"
 	if result.Success {
@@ -150,7 +146,6 @@ func logDelivery(ctx context.Context, subscriptionID int64, eventID string, atte
 	}
 }
 
-// writeToDLQ stores a permanently failed event in the dead_letter_events table.
 func writeToDLQ(ctx context.Context, subscriptionID int64, eventID string, ev Event, attempts int, lastError string) {
 	payload, err := json.Marshal(map[string]any{
 		"schema":    ev.Schema,
@@ -176,8 +171,6 @@ func writeToDLQ(ctx context.Context, subscriptionID int64, eventID string, ev Ev
 	}
 }
 
-// loadCheckpoint reads the last saved binlog position for a source.
-// Returns ("", 0, nil) if no checkpoint exists yet.
 func loadCheckpoint(ctx context.Context, sourceID int64) (string, uint32, error) {
 	var file string
 	var pos uint32
@@ -197,7 +190,6 @@ func loadCheckpoint(ctx context.Context, sourceID int64) (string, uint32, error)
 	return file, pos, nil
 }
 
-// saveCheckpoint writes (or updates) the current binlog position for a source.
 func saveCheckpoint(ctx context.Context, sourceID int64, file string, pos uint32) error {
 	_, err := metadataDB.ExecContext(ctx, `
 		INSERT INTO source_checkpoints (source_id, binlog_file, binlog_pos, updated_at)

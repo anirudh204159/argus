@@ -17,13 +17,15 @@ const (
 
 var workerCancel context.CancelFunc
 
-// RunWorker consumes events from Redis and delivers them to subscribed webhooks.
 func RunWorker() error {
 	if err := initRedis(); err != nil {
 		return fmt.Errorf("redis init: %w", err)
 	}
 	defer rdb.Close()
 	fmt.Println("Worker connected to Redis")
+
+	// Start metrics HTTP server (port 9102 for worker)
+	go serveMetrics(9102)
 
 	if err := initMetadataDB(); err != nil {
 		return fmt.Errorf("metadata db init: %w", err)
@@ -49,7 +51,6 @@ func RunWorker() error {
 		workerConsumerName, streamKey, workerConsumerGroup)
 
 	for {
-		// Check for shutdown before each read
 		if ctx.Err() != nil {
 			fmt.Println("Worker shutdown complete")
 			return nil
@@ -67,7 +68,6 @@ func RunWorker() error {
 			if err == redis.Nil {
 				continue
 			}
-			// Context cancelled = graceful shutdown
 			if ctx.Err() != nil {
 				fmt.Println("Worker shutdown complete")
 				return nil
@@ -91,7 +91,6 @@ func RunWorker() error {
 	}
 }
 
-// ShutdownWorker triggers graceful shutdown of the worker.
 func ShutdownWorker() {
 	if workerCancel != nil {
 		workerCancel()
@@ -121,6 +120,7 @@ func handleMessage(ctx context.Context, msg redis.XMessage) error {
 		result, attempts := deliverWithRetries(ctx, sub, ev, msg.ID)
 		if !result.Success {
 			writeToDLQ(ctx, sub.ID, msg.ID, ev, attempts, result.ErrorMessage)
+			dlqWritesTotal.Inc()
 			fmt.Printf("    ! sub %d → DLQ after %d attempts: %s\n",
 				sub.ID, attempts, result.ErrorMessage)
 		}

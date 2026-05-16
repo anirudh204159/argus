@@ -15,6 +15,8 @@ const (
 	workerBlockTimeout  = 5 * time.Second
 )
 
+var workerCancel context.CancelFunc
+
 // RunWorker consumes events from Redis and delivers them to subscribed webhooks.
 func RunWorker() error {
 	if err := initRedis(); err != nil {
@@ -30,18 +32,14 @@ func RunWorker() error {
 	fmt.Println("Worker connected to metadata DB")
 
 	ctx, cancel := context.WithCancel(context.Background())
+	workerCancel = cancel
 	defer cancel()
 
-	// Start background subscription refresher
 	go refreshSubscriptions(ctx)
-
-	// Live config update listener (Redis pub/sub)
 	go watchConfigChanges(ctx)
 
-	// Give it a beat to do the first load before we start processing
 	time.Sleep(500 * time.Millisecond)
 
-	// Create the consumer group if it doesn't exist
 	err := rdb.XGroupCreateMkStream(ctx, streamKey, workerConsumerGroup, "$").Err()
 	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
 		return fmt.Errorf("create consumer group: %w", err)
@@ -51,6 +49,12 @@ func RunWorker() error {
 		workerConsumerName, streamKey, workerConsumerGroup)
 
 	for {
+		// Check for shutdown before each read
+		if ctx.Err() != nil {
+			fmt.Println("Worker shutdown complete")
+			return nil
+		}
+
 		streams, err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    workerConsumerGroup,
 			Consumer: workerConsumerName,
@@ -62,6 +66,11 @@ func RunWorker() error {
 		if err != nil {
 			if err == redis.Nil {
 				continue
+			}
+			// Context cancelled = graceful shutdown
+			if ctx.Err() != nil {
+				fmt.Println("Worker shutdown complete")
+				return nil
 			}
 			fmt.Println("read error:", err)
 			time.Sleep(1 * time.Second)
@@ -82,7 +91,13 @@ func RunWorker() error {
 	}
 }
 
-// handleMessage decodes an event and finds matching subscriptions.
+// ShutdownWorker triggers graceful shutdown of the worker.
+func ShutdownWorker() {
+	if workerCancel != nil {
+		workerCancel()
+	}
+}
+
 func handleMessage(ctx context.Context, msg redis.XMessage) error {
 	payloadRaw, ok := msg.Values["payload"].(string)
 	if !ok {
@@ -114,8 +129,6 @@ func handleMessage(ctx context.Context, msg redis.XMessage) error {
 	return nil
 }
 
-// matchSubscriptions returns subscriptions that care about this event
-// based on table name and operation type.
 func matchSubscriptions(ev Event) []Subscription {
 	var matches []Subscription
 	for _, sub := range getSubscriptions() {
@@ -130,7 +143,6 @@ func matchSubscriptions(ev Event) []Subscription {
 	return matches
 }
 
-// contains is a small helper: true if `target` is in `list`.
 func contains(list []string, target string) bool {
 	for _, item := range list {
 		if item == target {

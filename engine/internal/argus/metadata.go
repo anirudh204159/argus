@@ -89,7 +89,6 @@ func loadSubscriptions(ctx context.Context) ([]Subscription, error) {
 }
 
 // refreshSubscriptions periodically reloads the subscription cache.
-// Runs as a goroutine for the lifetime of the worker.
 func refreshSubscriptions(ctx context.Context) {
 	ticker := time.NewTicker(refreshEvery)
 	defer ticker.Stop()
@@ -117,13 +116,11 @@ func refreshSubscriptions(ctx context.Context) {
 func getSubscriptions() []Subscription {
 	subscriptionsMu.RLock()
 	defer subscriptionsMu.RUnlock()
-	// Return a copy so callers don't accidentally mutate the cache
 	snapshot := make([]Subscription, len(cachedSubscriptions))
 	copy(snapshot, cachedSubscriptions)
 	return snapshot
 }
 
-// logDelivery records one delivery attempt in the delivery_log table.
 // logDelivery records one delivery attempt in the delivery_log table.
 func logDelivery(ctx context.Context, subscriptionID int64, eventID string, attempt int, result deliveryResult) {
 	status := "failure"
@@ -177,4 +174,41 @@ func writeToDLQ(ctx context.Context, subscriptionID int64, eventID string, ev Ev
 	if err != nil {
 		fmt.Printf("dlq write error: %v\n", err)
 	}
+}
+
+// loadCheckpoint reads the last saved binlog position for a source.
+// Returns ("", 0, nil) if no checkpoint exists yet.
+func loadCheckpoint(ctx context.Context, sourceID int64) (string, uint32, error) {
+	var file string
+	var pos uint32
+
+	err := metadataDB.QueryRowContext(ctx, `
+		SELECT binlog_file, binlog_pos
+		FROM source_checkpoints
+		WHERE source_id = ?
+	`, sourceID).Scan(&file, &pos)
+
+	if err == sql.ErrNoRows {
+		return "", 0, nil
+	}
+	if err != nil {
+		return "", 0, fmt.Errorf("load checkpoint: %w", err)
+	}
+	return file, pos, nil
+}
+
+// saveCheckpoint writes (or updates) the current binlog position for a source.
+func saveCheckpoint(ctx context.Context, sourceID int64, file string, pos uint32) error {
+	_, err := metadataDB.ExecContext(ctx, `
+		INSERT INTO source_checkpoints (source_id, binlog_file, binlog_pos, updated_at)
+		VALUES (?, ?, ?, NOW())
+		ON DUPLICATE KEY UPDATE
+			binlog_file = VALUES(binlog_file),
+			binlog_pos = VALUES(binlog_pos),
+			updated_at = NOW()
+	`, sourceID, file, pos)
+	if err != nil {
+		return fmt.Errorf("save checkpoint: %w", err)
+	}
+	return nil
 }

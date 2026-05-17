@@ -1,5 +1,6 @@
 # Argus
 
+[![CI](https://github.com/anirudh204159/argus/actions/workflows/ci.yml/badge.svg)](https://github.com/anirudh204159/argus/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Python Version](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

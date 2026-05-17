@@ -26,7 +26,7 @@ def create_source(
         database_name=payload.database_name,
         replication_user=payload.replication_user,
         replication_password_enc=payload.replication_password.encode(),
-        status="active",
+        status="disconnected",
     )
     db.add(source)
     try:

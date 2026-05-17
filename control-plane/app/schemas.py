@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -72,12 +73,16 @@ class SourceOut(BaseModel):
 
 # ---------- Subscriptions ----------
 
+# Allowed DB operations a subscription can listen for.
+Operation = Literal["INSERT", "UPDATE", "DELETE"]
+
+
 class SubscriptionCreate(BaseModel):
     """Request body for POST /subscriptions"""
     source_id: int
     name: str = Field(min_length=1, max_length=100)
     tables: list[str] = Field(min_length=1)
-    operations: list[str] = Field(min_length=1)
+    operations: list[Operation] = Field(min_length=1)
     webhook_url: str = Field(min_length=1, max_length=2000)
     retry_max: int = Field(default=5, ge=0, le=20)
 
@@ -86,7 +91,7 @@ class SubscriptionUpdate(BaseModel):
     """Request body for PATCH /subscriptions/{id}. All fields optional."""
     name: str | None = Field(default=None, min_length=1, max_length=100)
     tables: list[str] | None = Field(default=None, min_length=1)
-    operations: list[str] | None = Field(default=None, min_length=1)
+    operations: list[Operation] | None = Field(default=None, min_length=1)
     webhook_url: str | None = Field(default=None, min_length=1, max_length=2000)
     retry_max: int | None = Field(default=None, ge=0, le=20)
     active: bool | None = None

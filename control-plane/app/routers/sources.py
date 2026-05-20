@@ -8,6 +8,7 @@ from app.models import Source, User
 from app.redis_client import publish_config_change
 from app.schemas import SourceCreate, SourceOut, SourceUpdate
 from app.security import get_current_user
+from app.crypto import encrypt
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -25,7 +26,7 @@ def create_source(
         port=payload.port,
         database_name=payload.database_name,
         replication_user=payload.replication_user,
-        replication_password_enc=payload.replication_password.encode(),
+        replication_password_enc=encrypt(payload.replication_password),
         status="disconnected",
     )
     db.add(source)
@@ -77,7 +78,7 @@ def update_source(
 
     update_data = payload.model_dump(exclude_unset=True)
     if "replication_password" in update_data:
-        update_data["replication_password_enc"] = update_data.pop("replication_password").encode()
+        update_data["replication_password_enc"] = encrypt(update_data.pop("replication_password"))
     for field, value in update_data.items():
         setattr(source, field, value)
 

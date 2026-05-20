@@ -1,3 +1,8 @@
+import os
+
+# CRITICAL: must set this BEFORE importing app (Limiter reads env at import time)
+os.environ["ARGUS_DISABLE_RATE_LIMIT"] = "1"
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

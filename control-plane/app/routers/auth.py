@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import User
+from app.rate_limit import limiter
 from app.schemas import UserRegister, UserLogin, UserOut, Token
 from app.security import hash_password, verify_password, create_access_token
 
@@ -14,8 +15,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def register(payload: UserRegister, db: Session = Depends(get_db)):
-    """Register a new user."""
+@limiter.limit("5/minute")
+def register(request: Request, payload: UserRegister, db: Session = Depends(get_db)):
+    """Register a new user. Rate-limited to 5/min per IP."""
     user = User(
         email=payload.email,
         password_hash=hash_password(payload.password),
@@ -34,8 +36,9 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(payload: UserLogin, db: Session = Depends(get_db)):
-    """Authenticate a user and return a JWT access token."""
+@limiter.limit("10/minute")
+def login(request: Request, payload: UserLogin, db: Session = Depends(get_db)):
+    """Authenticate a user and return a JWT access token. Rate-limited to 10/min per IP."""
     user = db.query(User).filter(User.email == payload.email).first()
 
     if not user or not verify_password(payload.password, user.password_hash):

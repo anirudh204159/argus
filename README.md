@@ -214,6 +214,23 @@ Both binaries expose Prometheus metrics on dedicated ports:
 
 ---
 
+## Security
+
+Argus takes a layered approach to securing the control plane and stored credentials.
+
+| Layer | Implementation |
+|-------|----------------|
+| Password hashing | bcrypt with passlib |
+| Auth tokens | JWT HS256, env-configurable secret (`ARGUS_JWT_SECRET`), 24h default expiry |
+| Source credentials at rest | AES-GCM 256-bit, 96-bit nonce, 128-bit auth tag (`ARGUS_ENCRYPTION_KEY`) |
+| Brute-force protection | Per-IP rate limits on auth (`/auth/login` 10/min, `/auth/register` 5/min) |
+| Secrets in source | None — all secrets loaded from environment, `.env.example` documents required vars |
+| Transport | HTTPS recommended in production (terminate at load balancer) |
+
+In dev mode, ephemeral JWT and encryption keys are generated at startup if env vars are unset. This is safe (no hardcoded secrets in the repo) but means tokens are invalidated and encrypted data is unreadable across restarts. Production deployments must set both env vars.
+
+See `control-plane/.env.example` for the full list of required environment variables.
+
 ## Tech stack
 
 **Engine + Worker:** Go 1.22, [go-mysql](https://github.com/go-mysql-org/go-mysql), [go-redis](https://github.com/redis/go-redis), [prometheus/client_golang](https://github.com/prometheus/client_golang)

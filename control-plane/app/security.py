@@ -12,11 +12,22 @@ from app.models import User
 
 
 # ----- Configuration -----
-# In production, JWT_SECRET should come from an environment variable.
-# For now, hard-coded — we'll move to env vars in the security hardening phase.
-JWT_SECRET = "dev-secret-change-me-in-production"
+import os
+import secrets as _secrets
+from dotenv import load_dotenv
+
+# Load .env file if present
+load_dotenv()
+
+JWT_SECRET = os.getenv("ARGUS_JWT_SECRET")
+if not JWT_SECRET:
+    # Dev fallback: generate a fresh ephemeral secret each run.
+    # This forces re-login after restart but is safe (no hardcoded secret in repo).
+    JWT_SECRET = _secrets.token_urlsafe(64)
+    print("WARNING: ARGUS_JWT_SECRET not set — using ephemeral dev secret. Set it in production.")
+
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours (looser than IronLedger's 30 min, fine for dev)
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ARGUS_JWT_EXPIRE_MINUTES", "1440"))  # 24h default
 
 
 # ----- Password hashing -----
